@@ -9,22 +9,7 @@
 	TB - max time (miliseconds) needed for one molecule creation 0 <= TB <= 1000
 */
 
-#include <ctype.h>
-#include <limits.h>
-#include <pthread.h>
-#include <semaphore.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-
-/* error codes */
-enum error_codes
-{
-    ECODE_SUCCESS = 0,
-	ECODE_ERROR = 1
-};
+#include "defs.h"
 
 /**
  * @brief Checks if string is a whole non-negative number
@@ -43,24 +28,20 @@ bool is_integer(char *s) {
  * 
  * @param argc number of program arguments
  * @param argv list of pointers to arguments strings
- * @param NO pointer to number of oxygens
- * @param NH pointer to number of hydrogens
- * @param TI pointer to waiting time in miliseconds
- * @param TB pointer to molecule creation time in miliseconds
  * 
  * @returns true - if arguments are correct
  */
-bool arg_parse(int argc, char **argv, int *NO, int *NH, int *TI, int *TB) {
+bool arg_parse(int argc, char **argv) {
 	if (argc != 5) {
 		fprintf(stderr, "Invalid number of arguments\n");
 		return false;
 	} else {
 		if (is_integer(argv[1]) && is_integer(argv[2]) && is_integer(argv[3]) && is_integer(argv[4])) {
-			*NO = atoi(argv[1]);
-			*NH = atoi(argv[2]);
-			*TI = atoi(argv[3]);
-			*TB = atoi(argv[4]);
-			if (*NO > INT_MAX || *NH > INT_MAX || *TI > 1000 || *TB > 1000) {
+			NO = atoi(argv[1]);
+			NH = atoi(argv[2]);
+			TI = atoi(argv[3]);
+			TB = atoi(argv[4]);
+			if (NO > INT_MAX || NH > INT_MAX || TI > 1000 || TB > 1000) {
 				fprintf(stderr, "Invalid value of arguments\n");
 				return false;
 			}
@@ -76,30 +57,25 @@ int main(int argc, char *argv[]){
 
 	int pid_O = 0;	// child process 1
 	int pid_H = 0;	// child process 2
-	int NO = 0;		// number of Os
-	int NH = 0;		// number of Hs
-	int TI = 0;		// waiting time miliseconds
-	int TB = 0;		// mol creation time miliseconds
 
-	if (!arg_parse(argc, argv, &NO, &NH, &TI, &TB)) 
+	if (!arg_parse(argc, argv)) 
 		return ECODE_ERROR;
 
 	pid_O = fork();	// create O
 
-	if (pid_O < 0) {
-		// smt went wrong
-	} else if (pid_O == 0) {
-		// O process code
+	if (pid_O < 0) { 			// smt went wrong
+		fprintf(stderr, "Unable to fork process\n");
+		return ECODE_ERROR;
+	} else if (pid_O == 0) {	// O process code
 		printf("ID: %d, PID: %d -- This is Oxygen Jesse\n", getpid(), getppid());
 	} else {
 		pid_H = fork();	// create H
-		if (pid_H < 0) {
-			// smt went wrong
-		} else if (pid_H == 0) {
-			// H process code
+		if (pid_H < 0) {		// smt went wrong
+			fprintf(stderr, "Unable to fork process\n");
+			return ECODE_ERROR;
+		} else if (pid_H == 0) {	// H process code
 			printf("ID: %d, PID: %d -- This is Hydrogen Jesse\n", getpid(), getppid());
-		} else {
-			// parent process
+		} else {				// parent process
 			printf("ID: %d, PID: %d -- I am the parental danger Skyler\n", getpid(), getppid());
 		}
 	}
