@@ -4,3 +4,6 @@
 # test file
 /test.c
 /test
+
+# vscode
+.vscode
