@@ -9,10 +9,14 @@
 	TB - max time (miliseconds) needed for one molecule creation 0 <= TB <= 1000
 */
 
-#include <stdlib.h>
-#include <stdio.h>
+#include <ctype.h>
+#include <limits.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 /* error codes */
@@ -22,16 +26,63 @@ enum error_codes
 	ECODE_ERROR = 1
 };
 
-sem_t my_sem;
+/**
+ * @brief Checks if string is a whole non-negative number
+ * 
+ * @param s input string
+ */
+bool is_integer(char *s) {
+	for (int i=0; s[i] != '\0'; i++)
+		if (!isdigit(s[i]))
+			return false;
+	return true;
+}
 
-
+/**
+ * @brief Parses arguments and checks theirs validity
+ * 
+ * @param argc number of program arguments
+ * @param argv list of pointers to arguments strings
+ * @param NO pointer to number of oxygens
+ * @param NH pointer to number of hydrogens
+ * @param TI pointer to waiting time in miliseconds
+ * @param TB pointer to molecule creation time in miliseconds
+ * 
+ * @returns true - if arguments are correct
+ */
+bool arg_parse(int argc, char **argv, int *NO, int *NH, int *TI, int *TB) {
+	if (argc != 5) {
+		fprintf(stderr, "Invalid number of arguments\n");
+		return false;
+	} else {
+		if (is_integer(argv[1]) && is_integer(argv[2]) && is_integer(argv[3]) && is_integer(argv[4])) {
+			*NO = atoi(argv[1]);
+			*NH = atoi(argv[2]);
+			*TI = atoi(argv[3]);
+			*TB = atoi(argv[4]);
+			if (*NO > INT_MAX || *NH > INT_MAX || *TI > 1000 || *TB > 1000) {
+				fprintf(stderr, "Invalid value of arguments\n");
+				return false;
+			}
+		} else {
+			fprintf(stderr, "Invalid format of arguments\n");
+			return false;
+		}
+	}
+	return true;
+}
 
 int main(int argc, char *argv[]){
-	(void)argv;
-	(void)argc;
 
 	int pid_O = 0;	// child process 1
 	int pid_H = 0;	// child process 2
+	int NO = 0;		// number of Os
+	int NH = 0;		// number of Hs
+	int TI = 0;		// waiting time miliseconds
+	int TB = 0;		// mol creation time miliseconds
+
+	if (!arg_parse(argc, argv, &NO, &NH, &TI, &TB)) 
+		return ECODE_ERROR;
 
 	pid_O = fork();	// create O
 
