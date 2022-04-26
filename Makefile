@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -std=gnu99 -Wall -Wextra -Werror -pedantic -lrt -pthread 
+CFLAGS = -std=gnu99 -Wall -Wextra -Werror -pedantic -lrt -pthread
 SOURCES = $(wildcard *.c)
 NAME = proj2
 

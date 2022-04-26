@@ -1,4 +1,13 @@
-#include "defs.h"
+#include "header.h"
+
+/*
+Shared:
+	All mol created
+	Nof O
+	Nof H
+	Molecule id
+	Molecule created
+*/
 
 /**
  * @brief Checks if string is a whole non-negative number
@@ -48,12 +57,53 @@ bool init_lab() {
 		fprintf(stderr, "Unable to open .out file\n");
 		return false;
 	}
+	setbuf(output, NULL);
+	setbuf(stdout, NULL); //FIXME
+
+	MMAP(A_line_id);
+
+	if (sem_aprint = sem_open(SEM_APRINT, O_CREAT | O_EXCL, 0666, 0) == SEM_FAILED) return false;
 	return true;
 }
 
 void clear_lab() {
 	if (output != NULL) {
 		fclose(output);
+	}
+
+	UNMAP(A_line_id);
+
+	sem_close(sem_aprint);
+	sem_unlink(SEM_APRINT);
+}
+
+void oxygen() {
+	for (int i=0; i<NO; i++) {
+		pid_t o_id = fork();
+		if (o_id == 0) {
+			//TODO
+			usleep(1000*rand()%TI);
+			printf("Oxygen id: %d\n", i+1);
+			exit(0);
+		} else if (o_id < 0) {
+			fprintf(stderr, "Unable to fork\n");
+			exit(-1);
+		}
+	}
+}
+
+void hydrogen() {
+	for (int i=0; i<NH; i++) {
+		pid_t o_id = fork();
+		if (o_id == 0) {
+			//TODO
+			usleep(1000*rand()%TI);
+			printf("Hydrogen id: %d\n", i+1);
+			exit(0);
+		} else if (o_id < 0) {
+			fprintf(stderr, "Unable to fork\n");
+			exit(-1);
+		}
 	}
 }
 
@@ -65,7 +115,13 @@ int main(int argc, char *argv[]){
 		clear_lab();
 		return ECODE_ERROR;
 	}
-   
-   clear_lab();
-   return ECODE_SUCCESS;
+
+	oxygen();
+	hydrogen();
+
+	while (wait(NULL) > 0);
+	printf("All children are finished\n");
+	
+   	clear_lab();
+   	return ECODE_SUCCESS;
 }
