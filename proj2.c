@@ -1,14 +1,3 @@
-/*
-	How to run the program?
-
-	$ ./proj2 NO NH TI TB
-	NO - number of oxygens
-	NH - number of hydrogens
-	TI - max time (miliseconds) for which an atom of O/H waits after its creation
-		 to join the queue for molecule creation 0 <= TI <= 1000
-	TB - max time (miliseconds) needed for one molecule creation 0 <= TB <= 1000
-*/
-
 #include "defs.h"
 
 /**
@@ -53,32 +42,30 @@ bool arg_parse(int argc, char **argv) {
 	return true;
 }
 
+bool init_lab() {
+	output = fopen("proj2.out", "w");
+	if (output == NULL) {
+		fprintf(stderr, "Unable to open .out file\n");
+		return false;
+	}
+	return true;
+}
+
+void clear_lab() {
+	if (output != NULL) {
+		fclose(output);
+	}
+}
+
 int main(int argc, char *argv[]){
-
-	int pid_O = 0;	// child process 1
-	int pid_H = 0;	// child process 2
-
 	if (!arg_parse(argc, argv)) 
 		return ECODE_ERROR;
-
-	pid_O = fork();	// create O
-
-	if (pid_O < 0) { 			// smt went wrong
-		fprintf(stderr, "Unable to fork process\n");
+	
+	if (!init_lab()) {
+		clear_lab();
 		return ECODE_ERROR;
-	} else if (pid_O == 0) {	// O process code
-		printf("ID: %d, PID: %d -- This is Oxygen Jesse\n", getpid(), getppid());
-	} else {
-		pid_H = fork();	// create H
-		if (pid_H < 0) {		// smt went wrong
-			fprintf(stderr, "Unable to fork process\n");
-			return ECODE_ERROR;
-		} else if (pid_H == 0) {	// H process code
-			printf("ID: %d, PID: %d -- This is Hydrogen Jesse\n", getpid(), getppid());
-		} else {				// parent process
-			printf("ID: %d, PID: %d -- I am the parental danger Skyler\n", getpid(), getppid());
-		}
 	}
    
+   clear_lab();
    return ECODE_SUCCESS;
 }

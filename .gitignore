@@ -1,9 +1,11 @@
 # binary file
-/proj2
+proj2
 
-# test file
-/test.c
+# test folder
 /test
 
 # vscode
 /.vscode
+
+# .out
+*.out
