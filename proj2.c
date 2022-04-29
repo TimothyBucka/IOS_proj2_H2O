@@ -1,6 +1,13 @@
 #include "header.h"
 
 /*
+	Author: Timotej Bucka - xbucka00
+	Year: 2022
+	Solution inspiration: https://greenteapress.com/semaphores/LittleBookOfSemaphores.pdf
+*/
+
+
+/*
 Shared:
 	All mol created
 	Nof O
@@ -61,8 +68,37 @@ bool init_lab() {
 	setbuf(stdout, NULL); //FIXME
 
 	MMAP(A_line_id);
+	*A_line_id = 1;
+	MMAP(hydrogen_id);
+	*hydrogen_id = 0;
+	MMAP(oxygen_id);
+	*oxygen_id = 0;
+	MMAP(molecule_id);
+	*molecule_id = 0;
+	MMAP(hydrogen_mol_count);
+	*hydrogen_mol_count = 0;
+	MMAP(oxygen_mol_count);
+	*oxygen_mol_count = 0;
 
-	if (sem_aprint = sem_open(SEM_APRINT, O_CREAT | O_EXCL, 0666, 0) == SEM_FAILED) return false;
+	/* Barrier initialization*/
+	MMAP(My_Barrier.n);
+	*My_Barrier.n = WATER_ATOMS;
+	SEM_INIT(My_Barrier.mutex, "/xbucka00.barrier_mutex", 1);
+	if (My_Barrier.mutex == SEM_FAILED) return false;
+	SEM_INIT(My_Barrier.turnstile1, "/xbucka00.barrier_turnstile1", 0);
+	if (My_Barrier.turnstile1 == SEM_FAILED) return false;
+	SEM_INIT(My_Barrier.turnstile2, "/xbucka00.barrier_turnstile2", 1);
+	if (My_Barrier.turnstile2 == SEM_FAILED) return false;
+
+	SEM_INIT(sem_line_print, "/xbucka00.sem_line_print", 1);
+	if (sem_line_print == SEM_FAILED) return false;
+	SEM_INIT(mutex, "/xbucka00.mutex", 1);
+	if (mutex == SEM_FAILED) return false;
+	SEM_INIT(hydrogen_queue, "/xbucka00.hydrogen_queue", 0);
+	if (hydrogen_queue == SEM_FAILED) return false;
+	SEM_INIT(oxygen_queue, "/xbucka00.oxygen_queue", 0);
+	if (oxygen_queue == SEM_FAILED) return false;
+
 	return true;
 }
 
@@ -72,37 +108,149 @@ void clear_lab() {
 	}
 
 	UNMAP(A_line_id);
+	UNMAP(hydrogen_id);
+	UNMAP(oxygen_id);
+	UNMAP(molecule_id);
+	UNMAP(hydrogen_mol_count);
+	UNMAP(oxygen_mol_count);
 
-	sem_close(sem_aprint);
-	sem_unlink(SEM_APRINT);
+	/* Barrier clearing */
+	UNMAP(My_Barrier.n);
+	SEM_CLEAR(My_Barrier.mutex, "/xbucka00.barrier_mutex");
+	SEM_CLEAR(My_Barrier.turnstile1, "/xbucka00.barrier_turnstile1");
+	SEM_CLEAR(My_Barrier.turnstile2, "/xbucka00.barrier_turnstile2");
+
+	SEM_CLEAR(sem_line_print, "/xbucka00.sem_line_print");
+	SEM_CLEAR(mutex, "/xbucka00.mutex");
+	SEM_CLEAR(hydrogen_queue, "/xbucka00.hydrogen_queue");
+	SEM_CLEAR(oxygen_queue, "/xbucka00.oxygen_queue");
 }
 
-void oxygen() {
-	for (int i=0; i<NO; i++) {
-		pid_t o_id = fork();
-		if (o_id == 0) {
-			//TODO
-			usleep(1000*rand()%TI);
-			printf("Oxygen id: %d\n", i+1);
-			exit(0);
-		} else if (o_id < 0) {
+void exec_barrier() {
+	sem_wait(My_Barrier.mutex);
+		(*My_Barrier.n)--;
+		if (*My_Barrier.n == 0) {
+			sem_post(My_Barrier.turnstile1);
+		}
+	sem_post(My_Barrier.mutex);
+
+	sem_wait(My_Barrier.turnstile1);
+	sem_post(My_Barrier.turnstile1);
+
+	sem_wait(My_Barrier.mutex);
+		(*My_Barrier.n)++;
+		if (*My_Barrier.n == WATER_ATOMS) 
+			sem_wait(My_Barrier.turnstile1);
+	sem_post(My_Barrier.mutex);
+}
+
+void hydrogen(int atom_id) {
+	sem_wait(sem_line_print);
+		(*hydrogen_id)++;
+		fprintf(output, "%d: H %d: started\n", (*A_line_id)++, atom_id);
+	sem_post(sem_line_print);
+	
+	srand(time(NULL)*getpid());
+	printf("Hydrogen time: %d\n", rand()%(TI+1));
+	usleep(1000*(rand()%(TI+1)));
+				
+	sem_wait(sem_line_print);
+		fprintf(output, "%d: H %d: going to queue\n", (*A_line_id)++, atom_id);
+	sem_post(sem_line_print);
+
+	sem_wait(mutex);
+		(*hydrogen_mol_count)++;
+		if (*hydrogen_mol_count >= 2 && *oxygen_mol_count >= 1) {
+			(*molecule_id)++;
+			sem_post(hydrogen_queue);
+			sem_post(hydrogen_queue);
+			*hydrogen_mol_count -= 2;
+			sem_post(oxygen_queue);
+			(*oxygen_mol_count)--;
+		} else {
+			sem_post(mutex);
+		}
+
+		sem_wait(hydrogen_queue);
+		sem_wait(sem_line_print);
+			fprintf(output, "%d: H %d: creating molecule %d\n", (*A_line_id)++, atom_id, *molecule_id);
+		sem_post(sem_line_print);
+
+		exec_barrier();
+
+		sem_wait(sem_line_print);
+			fprintf(output, "%d: H %d: molecule %d created\n", (*A_line_id)++, atom_id, *molecule_id);
+		sem_post(sem_line_print);
+}
+
+void oxygen(int atom_id) {
+	sem_wait(sem_line_print);
+		(*oxygen_id)++;
+		fprintf(output, "%d: O %d: started\n", (*A_line_id)++, atom_id);
+	sem_post(sem_line_print);
+
+	srand(time(NULL)*getpid());
+	printf("Oxygen time: %d\n", rand()%(TI+1));
+	usleep(1000*(rand()%(TI+1)));
+
+	sem_wait(sem_line_print);
+		fprintf(output, "%d: O %d: going to queue\n", (*A_line_id)++, atom_id);
+	sem_post(sem_line_print);
+
+	sem_wait(mutex);
+		(*oxygen_mol_count)++;
+		if (*hydrogen_mol_count >= 2) {
+			(*molecule_id)++;
+			sem_post(hydrogen_queue);
+			sem_post(hydrogen_queue);
+			*hydrogen_mol_count -= 2;
+			sem_post(oxygen_queue);
+			(*oxygen_mol_count)--;
+		} else {
+			sem_post(mutex);
+		}
+
+		sem_wait(oxygen_queue);
+
+		sem_wait(sem_line_print);
+			fprintf(output, "%d: O %d: creating molecule %d\n", (*A_line_id)++, atom_id, *molecule_id);
+		sem_post(sem_line_print);
+
+		printf("Molecule time: %d\n", rand()%(TB+1));
+		usleep(1000*(rand()%(TB+1)));
+
+		exec_barrier();
+
+		sem_wait(sem_line_print);
+			fprintf(output, "%d: O %d: molecule %d created\n", (*A_line_id)++, atom_id, *molecule_id);
+		sem_post(sem_line_print);
+	sem_post(mutex);
+}
+
+void gen_hydrogen() {
+	for (int i=1; i<=NH; i++) {
+		pid_t h_id = fork();
+		if (h_id == 0) {
+			hydrogen(i);
+			exit(EXIT_SUCCESS);
+		} else if (h_id < 0) {
 			fprintf(stderr, "Unable to fork\n");
-			exit(-1);
+			clear_lab();
+			exit(EXIT_FAILURE);
 		}
 	}
 }
 
-void hydrogen() {
-	for (int i=0; i<NH; i++) {
+void gen_oxygen() {
+	for (int i=1; i<=NO; i++) {
 		pid_t o_id = fork();
 		if (o_id == 0) {
-			//TODO
-			usleep(1000*rand()%TI);
-			printf("Hydrogen id: %d\n", i+1);
-			exit(0);
+			oxygen(i);
+			exit(EXIT_SUCCESS);
 		} else if (o_id < 0) {
 			fprintf(stderr, "Unable to fork\n");
-			exit(-1);
+			clear_lab();
+			exit(EXIT_FAILURE);
 		}
 	}
 }
@@ -116,11 +264,10 @@ int main(int argc, char *argv[]){
 		return ECODE_ERROR;
 	}
 
-	oxygen();
-	hydrogen();
+	gen_hydrogen();
+	gen_oxygen();
 
 	while (wait(NULL) > 0);
-	printf("All children are finished\n");
 	
    	clear_lab();
    	return ECODE_SUCCESS;
