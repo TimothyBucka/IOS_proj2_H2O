@@ -74,7 +74,7 @@ bool init_lab() {
 	MMAP(oxygen_id);
 	*oxygen_id = 0;
 	MMAP(molecule_id);
-	*molecule_id = 0;
+	*molecule_id = 1;
 	MMAP(hydrogen_mol_count);
 	*hydrogen_mol_count = 0;
 	MMAP(oxygen_mol_count);
@@ -126,42 +126,62 @@ void clear_lab() {
 	SEM_CLEAR(oxygen_queue, "/xbucka00.oxygen_queue");
 }
 
-void exec_barrier() {
+void moleculing(char type, int atom_id) {
+	sem_wait(sem_line_print);
+			fprintf(output, "%d: %c %d: creating molecule %d\n", (*A_line_id)++, type, atom_id, *molecule_id);
+	sem_post(sem_line_print);
+
+	if (type == 'O') {
+		usleep(1000*(rand()%(TB+1)));	// after sleep enter barrier
+	}
+
 	sem_wait(My_Barrier.mutex);
 		(*My_Barrier.n)--;
 		if (*My_Barrier.n == 0) {
-			sem_post(My_Barrier.turnstile1);
+			sem_post(My_Barrier.turnstile1);	// last atom signals turnstile that molecule is done
 		}
 	sem_post(My_Barrier.mutex);
 
 	sem_wait(My_Barrier.turnstile1);
 	sem_post(My_Barrier.turnstile1);
 
+	sem_wait(sem_line_print);
+			fprintf(output, "%d: %c %d: molecule %d created\n", (*A_line_id)++, type, atom_id, *molecule_id);
+	sem_post(sem_line_print);
+
 	sem_wait(My_Barrier.mutex);
 		(*My_Barrier.n)++;
-		if (*My_Barrier.n == WATER_ATOMS) 
+		if (*My_Barrier.n == WATER_ATOMS) {
+			(*molecule_id)++;
 			sem_wait(My_Barrier.turnstile1);
+			sem_post(mutex);	// last atom opens mutex for other molecules
+		}
 	sem_post(My_Barrier.mutex);
 }
 
 void hydrogen(int atom_id) {
 	sem_wait(sem_line_print);
-		(*hydrogen_id)++;
 		fprintf(output, "%d: H %d: started\n", (*A_line_id)++, atom_id);
 	sem_post(sem_line_print);
 	
 	srand(time(NULL)*getpid());
-	printf("Hydrogen time: %d\n", rand()%(TI+1));
 	usleep(1000*(rand()%(TI+1)));
-				
+
 	sem_wait(sem_line_print);
 		fprintf(output, "%d: H %d: going to queue\n", (*A_line_id)++, atom_id);
 	sem_post(sem_line_print);
 
 	sem_wait(mutex);
+	(*hydrogen_id)++;
+	if ((NO<<1 < NH && *hydrogen_id >= (NO<<1)+1) || (NO<<1 > NH && NH&1 && *hydrogen_id==NH)) {
+		sem_wait(sem_line_print);
+			fprintf(output, "%d: H %d: not enough O or H\n", (*A_line_id)++, atom_id);
+		sem_post(sem_line_print);
+		sem_post(mutex);
+		return;
+	} else {
 		(*hydrogen_mol_count)++;
 		if (*hydrogen_mol_count >= 2 && *oxygen_mol_count >= 1) {
-			(*molecule_id)++;
 			sem_post(hydrogen_queue);
 			sem_post(hydrogen_queue);
 			*hydrogen_mol_count -= 2;
@@ -172,25 +192,17 @@ void hydrogen(int atom_id) {
 		}
 
 		sem_wait(hydrogen_queue);
-		sem_wait(sem_line_print);
-			fprintf(output, "%d: H %d: creating molecule %d\n", (*A_line_id)++, atom_id, *molecule_id);
-		sem_post(sem_line_print);
 
-		exec_barrier();
-
-		sem_wait(sem_line_print);
-			fprintf(output, "%d: H %d: molecule %d created\n", (*A_line_id)++, atom_id, *molecule_id);
-		sem_post(sem_line_print);
+		moleculing('H', atom_id);
+	}
 }
 
 void oxygen(int atom_id) {
 	sem_wait(sem_line_print);
-		(*oxygen_id)++;
 		fprintf(output, "%d: O %d: started\n", (*A_line_id)++, atom_id);
 	sem_post(sem_line_print);
 
 	srand(time(NULL)*getpid());
-	printf("Oxygen time: %d\n", rand()%(TI+1));
 	usleep(1000*(rand()%(TI+1)));
 
 	sem_wait(sem_line_print);
@@ -198,9 +210,16 @@ void oxygen(int atom_id) {
 	sem_post(sem_line_print);
 
 	sem_wait(mutex);
+	(*oxygen_id)++;
+	if (NO<<1 >= NH && *oxygen_id >= ((NH>>1) + 1)) {
+		sem_wait(sem_line_print);
+			fprintf(output, "%d: O %d: not enough H\n", (*A_line_id)++, atom_id);
+		sem_post(sem_line_print);
+		sem_post(mutex);
+		return;
+	} else {
 		(*oxygen_mol_count)++;
 		if (*hydrogen_mol_count >= 2) {
-			(*molecule_id)++;
 			sem_post(hydrogen_queue);
 			sem_post(hydrogen_queue);
 			*hydrogen_mol_count -= 2;
@@ -212,19 +231,8 @@ void oxygen(int atom_id) {
 
 		sem_wait(oxygen_queue);
 
-		sem_wait(sem_line_print);
-			fprintf(output, "%d: O %d: creating molecule %d\n", (*A_line_id)++, atom_id, *molecule_id);
-		sem_post(sem_line_print);
-
-		printf("Molecule time: %d\n", rand()%(TB+1));
-		usleep(1000*(rand()%(TB+1)));
-
-		exec_barrier();
-
-		sem_wait(sem_line_print);
-			fprintf(output, "%d: O %d: molecule %d created\n", (*A_line_id)++, atom_id, *molecule_id);
-		sem_post(sem_line_print);
-	sem_post(mutex);
+		moleculing('O', atom_id);
+	}
 }
 
 void gen_hydrogen() {
