@@ -48,6 +48,11 @@ bool arg_parse(int argc, char **argv) {
 	return true;
 }
 
+/**
+ * @brief Open output folder, map shared memory, open semaphores
+ * 
+ * @return flase - if error occurs
+ */
 bool init_lab() {
 	output = fopen("proj2.out", "w");
 	if (output == NULL) {
@@ -55,7 +60,6 @@ bool init_lab() {
 		return false;
 	}
 	setbuf(output, NULL);
-	setbuf(stdout, NULL); //FIXME
 
 	MMAP(A_line_id);
 	*A_line_id = 1;
@@ -92,6 +96,10 @@ bool init_lab() {
 	return true;
 }
 
+/**
+ * @brief Close output folder, unmap shared memory, close and unlink semaphores
+ * 
+ */
 void clear_lab() {
 	if (output != NULL) {
 		fclose(output);
@@ -116,9 +124,16 @@ void clear_lab() {
 	SEM_CLEAR(oxygen_queue, "/xbucka00.oxygen_queue");
 }
 
+
+/**
+ * @brief Runs when processes create  watermolecule
+ * 
+ * @param type Is either H or O depending on which process calls it
+ * @param atom_id Id of each atom, used for print
+ */
 void moleculing(char type, int atom_id) {
 	sem_wait(sem_line_print);
-			fprintf(output, "%d: %c %d: creating molecule %d\n", (*A_line_id)++, type, atom_id, *molecule_id);
+		fprintf(output, "%d: %c %d: creating molecule %d\n", (*A_line_id)++, type, atom_id, *molecule_id);
 	sem_post(sem_line_print);
 
 	if (type == 'O') {
@@ -136,7 +151,7 @@ void moleculing(char type, int atom_id) {
 	sem_post(My_Barrier.turnstile1);
 
 	sem_wait(sem_line_print);
-			fprintf(output, "%d: %c %d: molecule %d created\n", (*A_line_id)++, type, atom_id, *molecule_id);
+		fprintf(output, "%d: %c %d: molecule %d created\n", (*A_line_id)++, type, atom_id, *molecule_id);
 	sem_post(sem_line_print);
 
 	sem_wait(My_Barrier.mutex);
@@ -149,88 +164,105 @@ void moleculing(char type, int atom_id) {
 	sem_post(My_Barrier.mutex);
 }
 
+/**
+ * @brief Process each hydrogen atom executes
+ * 
+ * @param atom_id Identificator for each hydrogen process
+ */
 void hydrogen(int atom_id) {
 	sem_wait(sem_line_print);
 		fprintf(output, "%d: H %d: started\n", (*A_line_id)++, atom_id);
 	sem_post(sem_line_print);
 	
 	srand(time(NULL)*getpid());
-	usleep(1000*(rand()%(TI+1)));
+	usleep(1000*(rand()%(TI+1)));	// time for entering the queue
 
 	sem_wait(sem_line_print);
 		fprintf(output, "%d: H %d: going to queue\n", (*A_line_id)++, atom_id);
 	sem_post(sem_line_print);
 
-	sem_wait(mutex);
+	sem_wait(mutex);	// only one process enters
 	(*hydrogen_id)++;
+	// check if a hydrogen atom is extra (has no O to bond with) or O is missing a hydrogen to make molecule with
 	if ((NO<<1 < NH && *hydrogen_id >= (NO<<1)+1) || (NO<<1 > NH && NH&1 && *hydrogen_id==NH)) {
 		sem_wait(sem_line_print);
 			fprintf(output, "%d: H %d: not enough O or H\n", (*A_line_id)++, atom_id);
 		sem_post(sem_line_print);
-		sem_post(mutex);
-		return;
+		sem_post(mutex);	// open mutex for other processes to enter
+		return;	// after return dies
 	} else {
 		(*hydrogen_mol_count)++;
-		if (*hydrogen_mol_count >= 2 && *oxygen_mol_count >= 1) {
+		if (*hydrogen_mol_count >= 2 && *oxygen_mol_count >= 1) { // if the right amount of each type of process is reached
+			sem_post(hydrogen_queue); // let 2 (waiting) hydrogen processes continue
 			sem_post(hydrogen_queue);
-			sem_post(hydrogen_queue);
-			*hydrogen_mol_count -= 2;
-			sem_post(oxygen_queue);
-			(*oxygen_mol_count)--;
+			*hydrogen_mol_count -= 2; // reset count
+			sem_post(oxygen_queue);	// let 1 (waiting) oxygen process continue
+			(*oxygen_mol_count)--;	// reset count
 		} else {
-			sem_post(mutex);
+			sem_post(mutex); // open mutex for other processes to enter
 		}
 
-		sem_wait(hydrogen_queue);
+		sem_wait(hydrogen_queue); // wait until right amount
 
-		moleculing('H', atom_id);
+		moleculing('H', atom_id); // create molecule
 	}
 }
 
+/**
+ * @brief Process each oxygen atom executes
+ * 
+ * @param atom_id Identificator for each oxygen process
+ */
 void oxygen(int atom_id) {
 	sem_wait(sem_line_print);
 		fprintf(output, "%d: O %d: started\n", (*A_line_id)++, atom_id);
 	sem_post(sem_line_print);
 
 	srand(time(NULL)*getpid());
-	usleep(1000*(rand()%(TI+1)));
+	usleep(1000*(rand()%(TI+1))); // time for entering the queue
 
 	sem_wait(sem_line_print);
 		fprintf(output, "%d: O %d: going to queue\n", (*A_line_id)++, atom_id);
 	sem_post(sem_line_print);
 
-	sem_wait(mutex);
+	sem_wait(mutex); // only one process enters
 	(*oxygen_id)++;
+	// check if there is more oxygens than there should be considering the amount of hydrogens (Am I missing a hydrogen?)
 	if (NO<<1 > NH && *oxygen_id >= ((NH>>1) + 1)) {
 		sem_wait(sem_line_print);
 			fprintf(output, "%d: O %d: not enough H\n", (*A_line_id)++, atom_id);
 		sem_post(sem_line_print);
-		sem_post(mutex);
-		return;
+		sem_post(mutex); // open mutex for other processes to enter
+		return; // dies
 	} else {
 		(*oxygen_mol_count)++;
-		if (*hydrogen_mol_count >= 2) {
+		if (*hydrogen_mol_count >= 2) { // i have one oxygen, have I got 2 hydrogens?
+			sem_post(hydrogen_queue); // let 2 (waiting) hydrogens continue
 			sem_post(hydrogen_queue);
-			sem_post(hydrogen_queue);
-			*hydrogen_mol_count -= 2;
-			sem_post(oxygen_queue);
-			(*oxygen_mol_count)--;
+			*hydrogen_mol_count -= 2; // reset hydrogens needed
+			sem_post(oxygen_queue); // let 1 (waiting) oxygen continue
+			(*oxygen_mol_count)--; // reset oxygens needed
 		} else {
-			sem_post(mutex);
+			sem_post(mutex); // let another process
 		}
 
-		sem_wait(oxygen_queue);
+		sem_wait(oxygen_queue);	// wait until right amount
 
-		moleculing('O', atom_id);
+		moleculing('O', atom_id); // create molecule
 	}
 }
 
+
+/**
+ * @brief Creates NH number of processes aka hydrogens
+ * 
+ */
 void gen_hydrogen() {
 	for (int i=1; i<=NH; i++) {
 		pid_t h_id = fork();
 		if (h_id == 0) {
 			hydrogen(i);
-			exit(EXIT_SUCCESS);
+			exit(EXIT_SUCCESS); // dies after executing hydrogen()
 		} else if (h_id < 0) {
 			fprintf(stderr, "Unable to fork\n");
 			clear_lab();
@@ -239,12 +271,16 @@ void gen_hydrogen() {
 	}
 }
 
+/**
+ * @brief Creates NO number of processes aka oxygens
+ * 
+ */
 void gen_oxygen() {
 	for (int i=1; i<=NO; i++) {
 		pid_t o_id = fork();
 		if (o_id == 0) {
 			oxygen(i);
-			exit(EXIT_SUCCESS);
+			exit(EXIT_SUCCESS); // dies after executing oxygen()
 		} else if (o_id < 0) {
 			fprintf(stderr, "Unable to fork\n");
 			clear_lab();
@@ -253,20 +289,28 @@ void gen_oxygen() {
 	}
 }
 
+/**
+ * @brief Main function of the program
+ * 
+ * @param argc Numer of arguments including executable name
+ * @param argv Pointer to array of characters representing programs arguments
+ * @return returns EXIT_FAILURE if error occurs or returns EXIT_SUCCESS if everything went well
+ */
 int main(int argc, char *argv[]){
 	if (!arg_parse(argc, argv)) 
-		return ECODE_ERROR;
+		return EXIT_FAILURE;
 	
-	if (!init_lab()) {
+	if (!init_lab()) { // something goes wrong in initialization
 		clear_lab();
-		return ECODE_ERROR;
+		return EXIT_FAILURE;
 	}
 
+	// generate processes
 	gen_hydrogen();
 	gen_oxygen();
 
-	while (wait(NULL) > 0);
+	while (wait(NULL) > 0);	// wait for all child processes to die
 	
-   	clear_lab();
-   	return ECODE_SUCCESS;
+   	clear_lab(); // clear allocated memory
+   	return EXIT_SUCCESS;
 }

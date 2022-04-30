@@ -26,16 +26,9 @@
 
 FILE *output = NULL;
 
-/* error codes */
-enum error_codes
-{
-    ECODE_SUCCESS = 0,
-	ECODE_ERROR = 1
-};
-
 typedef struct {
-    int *n;
-    sem_t *mutex;
+    int *n; // number of atoms in water molecule (3)
+    sem_t *mutex; // mutual exclution semaphore for entering barrier
     sem_t *turnstile1;
     sem_t *turnstile2;
 } Barrier;
@@ -47,18 +40,18 @@ int TB = 0;		// mol creation time miliseconds
 
 /* shared variables */
 int *A_line_id = NULL; // A
-int *hydrogen_id = NULL;
-int *oxygen_id = NULL;
-int *molecule_id = NULL;
-int *hydrogen_mol_count = NULL;
-int *oxygen_mol_count = NULL;
+int *hydrogen_id = NULL; // counts hydrogen processes
+int *oxygen_id = NULL; // counts oxygen processes
+int *molecule_id = NULL; // counts number of molecules
+int *hydrogen_mol_count = NULL; // counts number of hydrogen processes needed for molecule
+int *oxygen_mol_count = NULL; // counts number of oxygen processes needed for molecule
 
 Barrier My_Barrier;
 
 /* semaphores */
-sem_t *sem_line_print = NULL;
-sem_t *mutex = NULL;
-sem_t *hydrogen_queue = NULL;
-sem_t *oxygen_queue = NULL;
+sem_t *sem_line_print = NULL; // for mutual exclusive access to output file
+sem_t *mutex = NULL; // for only one process to execute code
+sem_t *hydrogen_queue = NULL; // hydrogen wait for enough atoms to create molecule
+sem_t *oxygen_queue = NULL; // oxygen wait for enough atoms to create molecule
 
 #endif
