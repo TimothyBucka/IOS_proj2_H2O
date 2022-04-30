@@ -6,16 +6,6 @@
 	Solution inspiration: https://greenteapress.com/semaphores/LittleBookOfSemaphores.pdf
 */
 
-
-/*
-Shared:
-	All mol created
-	Nof O
-	Nof H
-	Molecule id
-	Molecule created
-*/
-
 /**
  * @brief Checks if string is a whole non-negative number
  * 
@@ -211,7 +201,7 @@ void oxygen(int atom_id) {
 
 	sem_wait(mutex);
 	(*oxygen_id)++;
-	if (NO<<1 >= NH && *oxygen_id >= ((NH>>1) + 1)) {
+	if (NO<<1 > NH && *oxygen_id >= ((NH>>1) + 1)) {
 		sem_wait(sem_line_print);
 			fprintf(output, "%d: O %d: not enough H\n", (*A_line_id)++, atom_id);
 		sem_post(sem_line_print);
